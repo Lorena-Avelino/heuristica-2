@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <unordered_set>
 #include "Graph.h"
+#include <deque>
 
 using namespace std;
 using namespace chrono;
@@ -70,6 +71,8 @@ public:
     ResponseBuscaLocal busca_local_primeira_melhora(Graph &graph, vector<int> &solucao_inicial, int iteracoes);
     ResponseBuscaLocal busca_local_primeira_melhora_cor_menos_frequente(Graph &graph, vector<int> &solucao_inicial, int iteracoes);
     ResponseBuscaLocal busca_local_melhor_melhora_cor_menos_frequente(Graph &graph, vector<int> &solucao_inicial, int iteracoes);
+    vector<vector<int>> generate_neighbors(Graph &graph, vector<int> &solucao_inicial, int, int rep, set<pair<int, int>> &tabu_list, int conflitos_atuais);
+    vector<vector<int>> generate_neighbors_tabu(Graph &graph, vector<int> &current_solution, int k, int rep, const set<pair<int, int>> &tabu_list, int current_conflicts);
 };
 
 int Problem::calcCusto(unordered_map<int, int> &frequencias)
@@ -396,6 +399,109 @@ ResponseBuscaLocal Problem::busca_local_melhor_melhora(Graph &graph, vector<int>
     response.num_conflitos = melhor_conflito;
 
     return response;
+}
+
+vector<vector<int>> generate_neighbors_tabu(Graph &graph, vector<int> &solucao_inicial, int k, int rep, const set<pair<int, int>> &tabu_list, int current_conflicts)
+{
+    vector<int> solucao = solucao_inicial;
+    vector<int> melhor_vizinho = solucao;
+    int melhor_custo = *max_element(solucao.begin(), solucao.end());
+    int melhor_conflito = calcConflitoTotal(solucao, graph);
+    vector<int> vertices_ordenados = ordenaVerticesPorConflito(solucao, graph);
+    vector<vector<int>> neighbors;
+
+    int iteracoes = 0;
+
+    for (int vertice : vertices_ordenados)
+    {
+        if (iteracoes >= rep)
+            break;
+
+        for (int vizinho : graph.get_neighbors(vertice))
+        {
+            if (iteracoes >= rep)
+                break;
+
+            vector<int> neighbor = solucao;
+            troca(neighbor, vertice, vizinho);
+
+            int new_conflicts = calcConflitoTotal(neighbor, graph);
+
+            // Adiciona se não estiver na lista tabu ou se atender a condição de aspiração
+            if (tabu_list.find({vertice, neighbor[vertice]}) == tabu_list.end() || new_conflicts < current_conflicts)
+            {
+                neighbors.push_back(neighbor);
+                iteracoes++;
+            }
+        }
+    }
+
+    return neighbors;
+}
+
+// Implementação do algoritmo TABUCOL
+vector<int> tabu_col(Graph &graph, int k, int tabu_size, int rep, int iteracoes, vector<int> &solucao_inicial)
+{
+    srand(time(0));
+
+    vector<int> current_solution = solucao_inicial;
+    int current_conflicts = calcConflitoTotal(current_solution, graph);
+
+    deque<pair<int, int>> tabu_list; // Lista tabu (FIFO)
+    int nbiter = 0;
+
+    while (current_conflicts > 0 && nbiter < iteracoes)
+    {
+        vector<vector<int>> neighbors = generate_neighbors_tabu(graph, current_solution, k, rep, {tabu_list.begin(), tabu_list.end()}, current_conflicts);
+
+        // Seleciona o melhor vizinho
+        vector<int> best_neighbor = current_solution;
+        int best_conflicts = numeric_limits<int>::max();
+
+        for (const vector<int> &neighbor : neighbors)
+        {
+            int neighbor_conflicts = calcConflitoTotal(neighbor, graph);
+            if (neighbor_conflicts < best_conflicts)
+            {
+                best_neighbor = neighbor;
+                best_conflicts = neighbor_conflicts;
+            }
+        }
+
+        // Atualiza a lista tabu
+        if (current_solution != best_neighbor)
+        {
+            for (int i = 0; i < graph.get_num_vertices(); ++i)
+            {
+                if (current_solution[i] != best_neighbor[i])
+                {
+                    tabu_list.push_back({i, best_neighbor[i]});
+                    if (tabu_list.size() > tabu_size)
+                    {
+                        tabu_list.pop_front();
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Atualiza a solução corrente
+        current_solution = best_neighbor;
+        current_conflicts = best_conflicts;
+
+        nbiter++;
+    }
+
+    if (current_conflicts == 0)
+    {
+        cout << "Coloração encontrada com " << k << " cores." << endl;
+    }
+    else
+    {
+        cout << "Nenhuma coloração encontrada com " << k << " cores." << endl;
+    }
+
+    return current_solution;
 }
 
 int Problem::calcConflitoTotal(vector<int> &cores, Graph &graph)
