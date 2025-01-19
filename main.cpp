@@ -46,7 +46,7 @@ const vector<string> REG_FILES = {
     "zeroin.i.3.col",
 };
 const vector<string> LAT_FILES = {
-    "latin_square_10.col",
+    // "latin_square_10.col",
 };
 const vector<string> LEI_FILES = {
     "le450_15a.col",
@@ -68,37 +68,37 @@ const vector<string> SCH_FILES = {
     "school1_nsh.col",
 };
 const vector<string> SGB_FILES = {
-    // "anna.col",
-    // "david.col",
-    // "games120.col",
-    // "homer.col",
-    // "huck.col",
-    // "jean.col",
-    // "miles1000.col",
-    // "miles1500.col",
-    // "miles250.col",
-    // "miles500.col",
-    // "miles750.col",
-    // "queen10_10.col",
-    // "queen11_11.col",
-    // "queen12_12.col",
-    // "queen13_13.col",
-    // "queen14_14.col",
-    // "queen15_15.col",
-    // "queen16_16.col",
+    "anna.col",
+    "david.col",
+    "games120.col",
+    "homer.col",
+    "huck.col",
+    "jean.col",
+    "miles1000.col",
+    "miles1500.col",
+    "miles250.col",
+    "miles500.col",
+    "miles750.col",
+    "queen10_10.col",
+    "queen11_11.col",
+    "queen12_12.col",
+    "queen13_13.col",
+    "queen14_14.col",
+    "queen15_15.col",
+    "queen16_16.col",
     "queen5_5.col",
-    // "queen6_6.col",
-    // "queen7_7.col",
-    // "queen8_12.col",
-    // "queen8_8.col",
-    // "queen9_9.col",
+    "queen6_6.col",
+    "queen7_7.col",
+    "queen8_12.col",
+    "queen8_8.col",
+    "queen9_9.col",
 };
 const vector<string> MYC_FILES = {
     "myciel3.col",
     "myciel4.col",
-    // "myciel5.col",
-    // "myciel6.col",
-    // "myciel7.col",
+    "myciel5.col",
+    "myciel6.col",
+    "myciel7.col",
 };
 const vector<string> MIZ_FILES = {
     "mug100_1.col",
@@ -299,12 +299,12 @@ int main()
     // }
     file.close();
 
-    // processaInstancia(DSJ_FILES, graphsData);
-    // processaInstancia(REG_FILES, graphsData);
-    // processaInstancia(LAT_FILES, graphsData);
-    // processaInstancia(LEI_FILES, graphsData);
-    // processaInstancia(SCH_FILES, graphsData);
-    // processaInstancia(SGB_FILES, graphsData);
+    processaInstancia(DSJ_FILES, graphsData);
+    processaInstancia(REG_FILES, graphsData);
+    processaInstancia(LAT_FILES, graphsData);
+    processaInstancia(LEI_FILES, graphsData);
+    processaInstancia(SCH_FILES, graphsData);
+    processaInstancia(SGB_FILES, graphsData);
     processaInstancia(MYC_FILES, graphsData);
     processaInstancia(MIZ_FILES, graphsData);
     processaInstancia(HOS_FILES, graphsData);

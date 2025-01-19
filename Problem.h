@@ -26,6 +26,15 @@ struct HeuristicaConstrutivaResponse
     int densidade_arestas;
     int size_clique;
     float delta_clique;
+    int num_conflitos;
+    int num_cores_busca_local_primeira_melhora_troca_vertice;
+    int num_conflitos_busca_local_primeira_melhora_troca_vertice;
+    int num_cores_busca_local_melhor_melhora_troca_vertice;
+    int num_conflitos_busca_local_melhor_melhora_troca_vertice;
+    int num_cores_busca_local_primeira_melhora_cor_menos_frequente;
+    int num_conflitos_busca_local_primeira_melhora_cor_menos_frequente;
+    int num_cores_busca_local_melhor_melhora_cor_menos_frequente;
+    int num_conflitos_busca_local_melhor_melhora_cor_menos_frequente;
 };
 
 struct ResponseMaxColor
@@ -38,6 +47,7 @@ struct ResponseBuscaLocal
 {
     vector<int> solucao_encontrada;
     int num_conflitos;
+    int num_cores;
 };
 
 class Problem
@@ -46,11 +56,12 @@ public:
     vector<int> calcClique(Graph &graph);
     vector<int> troca_cores_aleatorio(vector<int> &cores, Graph &graph);
     vector<int> troca(vector<int> &cores, int pos1, int pos2);
-    vector<int> substitui_cor_menos_frequente(vector<int> &cores, Graph &graph, int cor_menos_frequente);
+    vector<int> substitui_cor_menos_frequente(vector<int> &cores, Graph &graph, int cor_menos_frequente, int max_cores);
     ResponseMaxColor getMaxColor(Graph &Graph, int num_vertices, int &grauMaximo);
     HeuristicaConstrutivaResponse heuristicaConstrutiva(Graph &graph, int k);
     int calcConflitoVertice(vector<int> &cores, Graph &graph, int vertice);
     int calcConflitoTotal(vector<int> &cores, Graph &graph);
+    int calcCusto(unordered_map<int, int> &frequencias);
     vector<int> calcConflitoGraph(vector<int> &cores, Graph &graph);
     vector<int> ordenaVerticesPorConflito(vector<int> &solucao, Graph &graph);
     unordered_map<int, int> calcFrequenciaCores(vector<int> &solucao);
@@ -59,6 +70,17 @@ public:
     ResponseBuscaLocal busca_local_primeira_melhora(Graph &graph, vector<int> &solucao_inicial, int iteracoes);
     ResponseBuscaLocal busca_local_primeira_melhora_cor_menos_frequente(Graph &graph, vector<int> &solucao_inicial, int iteracoes);
     ResponseBuscaLocal busca_local_melhor_melhora_cor_menos_frequente(Graph &graph, vector<int> &solucao_inicial, int iteracoes);
+};
+
+int Problem::calcCusto(unordered_map<int, int> &frequencias)
+{
+    int custo = 0;
+    for (auto &par : frequencias)
+    {
+        if (par.second > 0)
+            custo++;
+    }
+    return custo;
 };
 
 vector<int> Problem::rankCorPorMenorFrequencia(unordered_map<int, int> &frequencias)
@@ -88,33 +110,63 @@ ResponseBuscaLocal Problem::busca_local_melhor_melhora_cor_menos_frequente(Graph
     vector<int> solucao = solucao_inicial;
     vector<int> melhor_vizinho = solucao;
 
-    int melhor_custo = *max_element(solucao.begin(), solucao.end());
     int melhor_conflito = calcConflitoTotal(solucao, graph);
 
     vector<int> vertices_ordenados_conflitos = ordenaVerticesPorConflito(solucao, graph);
 
+    unordered_map<int, int> frequenciaCores = calcFrequenciaCores(melhor_vizinho);
+    int melhor_custo_global = calcCusto(frequenciaCores);
     int cont_iteracoes = 0;
     while (true)
     {
-        unordered_map<int, int> frequenciaCores = calcFrequenciaCores(melhor_vizinho);
-        vector<int> rank_cores_menor_frequencia = rankCorPorMenorFrequencia(frequenciaCores);
 
+        vector<int> rank_cores_menor_frequencia = rankCorPorMenorFrequencia(frequenciaCores);
+        vector<int> melhor_vizinho_local = melhor_vizinho;
+        int melhor_conflito_local = melhor_conflito;
+        int melhor_custo_local = melhor_custo_global;
+        unordered_map<int, int> frequenciaCores_local = frequenciaCores;
         for (int i = 0; i < rank_cores_menor_frequencia.size(); i++)
         {
 
-            vector<int> vizinho = substitui_cor_menos_frequente(melhor_vizinho, graph, rank_cores_menor_frequencia[i]);
+            vector<int> vizinho = substitui_cor_menos_frequente(melhor_vizinho, graph, rank_cores_menor_frequencia[i], melhor_custo_global);
             int conflito_vizinho = calcConflitoTotal(vizinho, graph);
-            if (conflito_vizinho < melhor_conflito)
+            unordered_map<int, int> frequenciaVizinho = calcFrequenciaCores(vizinho);
+            int custo_vizinho = calcCusto(frequenciaVizinho);
+
+            if (custo_vizinho < melhor_custo_global && conflito_vizinho <= melhor_conflito)
             {
                 melhor_vizinho = vizinho;
                 melhor_conflito = conflito_vizinho;
+                melhor_custo_global = custo_vizinho;
+                frequenciaCores = frequenciaVizinho;
+                melhor_vizinho_local = vizinho;
+                melhor_conflito_local = conflito_vizinho;
+                melhor_custo_local = custo_vizinho;
+                frequenciaCores_local = frequenciaVizinho;
             }
+            else if (conflito_vizinho < melhor_conflito_local)
+            {
+                melhor_vizinho_local = vizinho;
+                melhor_conflito_local = conflito_vizinho;
+                melhor_custo_local = custo_vizinho;
+                frequenciaCores_local = frequenciaVizinho;
+            }
+
             cont_iteracoes++;
             if (cont_iteracoes == iteracoes)
             {
                 break;
             }
         }
+
+        if (melhor_custo_local <= melhor_custo_global && melhor_conflito_local <= melhor_conflito)
+        {
+            melhor_vizinho = melhor_vizinho_local;
+            melhor_conflito = melhor_conflito_local;
+            melhor_custo_global = melhor_custo_local;
+            frequenciaCores = frequenciaCores_local;
+        }
+
         if (cont_iteracoes == iteracoes)
         {
             break;
@@ -124,6 +176,7 @@ ResponseBuscaLocal Problem::busca_local_melhor_melhora_cor_menos_frequente(Graph
     ResponseBuscaLocal response;
     response.solucao_encontrada = melhor_vizinho;
     response.num_conflitos = melhor_conflito;
+    response.num_cores = melhor_custo_global;
 
     return response;
 }
@@ -133,7 +186,6 @@ ResponseBuscaLocal Problem::busca_local_primeira_melhora_cor_menos_frequente(Gra
     vector<int> solucao = solucao_inicial;
     vector<int> melhor_vizinho = solucao;
 
-    int melhor_custo = *max_element(solucao.begin(), solucao.end());
     int melhor_conflito = calcConflitoTotal(solucao, graph);
 
     vector<int> vertices_ordenados_conflitos = ordenaVerticesPorConflito(solucao, graph);
@@ -141,34 +193,44 @@ ResponseBuscaLocal Problem::busca_local_primeira_melhora_cor_menos_frequente(Gra
     unordered_map<int, int> frequenciaCores = calcFrequenciaCores(solucao);
 
     vector<int> rank_cores_menor_frequencia = rankCorPorMenorFrequencia(frequenciaCores);
-
+    int melhor_custo = calcCusto(frequenciaCores);
     int cont_iteracoes = 0;
-    for (int i = 0; i < rank_cores_menor_frequencia.size(); i++)
+    while (cont_iteracoes < iteracoes && melhor_conflito > 0)
     {
+        for (int i = 0; i < rank_cores_menor_frequencia.size(); i++)
+        {
 
-        vector<int> vizinho = substitui_cor_menos_frequente(melhor_vizinho, graph, rank_cores_menor_frequencia[i]);
-        int conflito_vizinho = calcConflitoTotal(vizinho, graph);
-        if (conflito_vizinho < melhor_conflito)
-        {
-            melhor_vizinho = vizinho;
-            melhor_conflito = conflito_vizinho;
-            break;
-        }
-        cont_iteracoes++;
-        if (cont_iteracoes == iteracoes)
-        {
-            break;
+            vector<int> vizinho = substitui_cor_menos_frequente(melhor_vizinho, graph, rank_cores_menor_frequencia[i], melhor_custo);
+            int conflito_vizinho = calcConflitoTotal(vizinho, graph);
+            unordered_map<int, int> frequenciaVizinho = calcFrequenciaCores(vizinho);
+            int custo_vizinho = calcCusto(frequenciaVizinho);
+            if (conflito_vizinho < melhor_conflito || (conflito_vizinho == melhor_conflito && custo_vizinho < melhor_custo))
+            {
+                melhor_vizinho = vizinho;
+                melhor_conflito = conflito_vizinho;
+                melhor_custo = custo_vizinho;
+                frequenciaCores = frequenciaVizinho;
+                break;
+            }
+            cont_iteracoes++;
+            if (cont_iteracoes == iteracoes)
+            {
+                break;
+            }
         }
     }
+
+    frequenciaCores = calcFrequenciaCores(melhor_vizinho);
 
     ResponseBuscaLocal response;
     response.solucao_encontrada = melhor_vizinho;
     response.num_conflitos = melhor_conflito;
+    response.num_cores = melhor_custo;
 
     return response;
 }
 
-vector<int> Problem::substitui_cor_menos_frequente(vector<int> &cores, Graph &graph, int cor_menos_frequente)
+vector<int> Problem::substitui_cor_menos_frequente(vector<int> &cores, Graph &graph, int cor_menos_frequente, int max_cores)
 {
     int num_vertices = graph.get_num_vertices();
     vector<int> cores_aux = cores;
@@ -183,7 +245,7 @@ vector<int> Problem::substitui_cor_menos_frequente(vector<int> &cores, Graph &gr
                 cores_vizinhas.insert(cores_aux[vizinho.vertice2]);
             }
 
-            for (int nova_cor = 1;; ++nova_cor)
+            for (int nova_cor = 1; nova_cor <= max_cores; ++nova_cor)
             {
                 if (cores_vizinhas.find(nova_cor) == cores_vizinhas.end())
                 {
@@ -243,7 +305,7 @@ ResponseBuscaLocal Problem::busca_local_primeira_melhora(Graph &graph, vector<in
 {
     vector<int> solucao = solucao_inicial;
     vector<int> melhor_vizinho = solucao;
-    // int melhor_custo = *max_element(solucao.begin(), solucao.end());
+
     int melhor_conflito = calcConflitoTotal(solucao, graph);
     vector<int> vertices_ordenados_conflitos = ordenaVerticesPorConflito(solucao, graph);
 
@@ -260,7 +322,7 @@ ResponseBuscaLocal Problem::busca_local_primeira_melhora(Graph &graph, vector<in
             int conflito_vizinho = calcConflitoTotal(vizinho, graph);
             if (conflito_vizinho < melhor_conflito)
             {
-                // cout << "feitas " << cont_iteracoes << " iteracoes  n conflitos " << conflito_vizinho << endl;
+
                 melhor_vizinho = vizinho;
                 melhor_conflito = conflito_vizinho;
                 break;
@@ -275,22 +337,6 @@ ResponseBuscaLocal Problem::busca_local_primeira_melhora(Graph &graph, vector<in
         {
             break;
         }
-
-        // vector<int> vizinho = troca_cores_aleatorio(melhor_vizinho, graph);
-
-        // // int custo_vizinho = *max_element(vizinho.begin(), vizinho.end());
-        // int conflito_vizinho = calcConflitoTotal(vizinho, graph);
-
-        // if (conflito_vizinho < melhor_conflito)
-        // {
-        //     cout << "feitas " << i << " iteracoes " << endl;
-        //     melhor_vizinho = vizinho;
-        //     melhor_conflito = conflito_vizinho;
-        // }
-        // if (i == iteracoes - 1)
-        // {
-        //     cout << "feitas " << iteracoes - 1 << " iteracoes " << endl;
-        // }
     }
 
     ResponseBuscaLocal response;
@@ -360,7 +406,7 @@ int Problem::calcConflitoTotal(vector<int> &cores, Graph &graph)
     {
         conflitos += calcConflitoVertice(cores, graph, vertice);
     }
-    return conflitos;
+    return conflitos / 2;
 }
 
 vector<int> Problem::calcConflitoGraph(vector<int> &cores, Graph &graph)
@@ -511,7 +557,7 @@ ResponseMaxColor Problem::getMaxColor(Graph &graph, int num_vertices, int &grauM
 
 HeuristicaConstrutivaResponse Problem::heuristicaConstrutiva(Graph &graph, int initialK = 10)
 {
-
+    HeuristicaConstrutivaResponse response;
     vector<int> clique = calcClique(graph);
     int k = clique.size();
 
@@ -528,39 +574,42 @@ HeuristicaConstrutivaResponse Problem::heuristicaConstrutiva(Graph &graph, int i
 
     int conflitos = calcConflitoTotal(responseMaxColor.cores, graph);
 
+    response.num_conflitos = conflitos;
+
     cout << "conflito antes: " << conflitos << " maxCorAntes: " << maxCor << endl;
 
-    // ResponseBuscaLocal responseBuscaLocal;
-    // responseBuscaLocal.solucao_encontrada = responseMaxColor.cores;
-    // responseBuscaLocal.num_conflitos = conflitos;
+    ResponseBuscaLocal busca = busca_local_primeira_melhora(graph, responseMaxColor.cores, 10000);
+    cout << "busca local primeira melhora troca vertice-- conflito: " << busca.num_conflitos << endl;
 
-    // ResponseBuscaLocal busca = busca_local_primeira_melhora(graph, responseMaxColor.cores, 1000);
-    // cout << "busca local primeira melhora -- conflito: " << busca.num_conflitos << endl;
+    response.num_conflitos_busca_local_primeira_melhora_troca_vertice = busca.num_conflitos;
+    response.num_cores_busca_local_primeira_melhora_troca_vertice = maxCor;
 
-    ResponseBuscaLocal busca = busca_local_primeira_melhora_cor_menos_frequente(graph, responseMaxColor.cores, 10000);
-    cout << "busca local primeira melhora cor menos frequente -- conflito: " << busca.num_conflitos << endl;
-    busca = busca_local_melhor_melhora_cor_menos_frequente(graph, responseMaxColor.cores, 10000);
-    cout << "busca local melhor melhora cor menos frequente -- conflito: " << busca.num_conflitos << endl;
+    busca = busca_local_primeira_melhora_cor_menos_frequente(graph, responseMaxColor.cores, 20000);
+    cout << "busca local primeira melhora cor menos frequente -- conflito: " << busca.num_conflitos << " cor agora: " << busca.num_cores << endl;
 
-    // busca = busca_local_melhor_melhora(graph, responseMaxColor.cores, 1000);
-    // cout << "busca local melhor melhora -- conflito depois: " << busca.num_conflitos << endl;
+    response.num_conflitos_busca_local_primeira_melhora_cor_menos_frequente = busca.num_conflitos;
+    response.num_cores_busca_local_primeira_melhora_cor_menos_frequente = busca.num_cores;
 
-    // for (int i = 0; i < 100; i++)
-    // {
-    //
+    int n_cor_busca_pri_m_c_f = busca.num_cores;
 
-    //     if (busca.num_conflitos > responseBuscaLocal.num_conflitos)
-    //     {
-    //         break;
-    //     }
+    busca = busca_local_melhor_melhora_cor_menos_frequente(graph, responseMaxColor.cores, 20000);
+    cout << "busca local melhor melhora cor menos frequente -- conflito: " << busca.num_conflitos << " cor agora: " << busca.num_cores << endl;
 
-    //     responseBuscaLocal = busca;
-    // }
+    response.num_conflitos_busca_local_melhor_melhora_cor_menos_frequente = busca.num_conflitos;
+    response.num_cores_busca_local_melhor_melhora_cor_menos_frequente = busca.num_cores;
 
-    // int maxCorDepois = *max_element(responseBuscaLocal.solucao_encontrada.begin(), responseBuscaLocal.solucao_encontrada.end());
-    // cout << "conflito depois: " << busca.num_conflitos << " maxCorDepois: " << maxCorDepois << endl;
+    int n_cor_busca_melhor_m_c_m_f = busca.num_cores;
 
-    HeuristicaConstrutivaResponse response;
+    if (maxCor > n_cor_busca_pri_m_c_f || maxCor > n_cor_busca_melhor_m_c_m_f)
+    {
+        cout << "MELHOROOOOOOOU A COORRRRR!!!!!!!!!##########################" << endl;
+    }
+
+    busca = busca_local_melhor_melhora(graph, responseMaxColor.cores, 10000);
+    cout << "busca local melhor melhora troca vertice -- conflito depois: " << busca.num_conflitos << endl;
+
+    response.num_conflitos_busca_local_melhor_melhora_troca_vertice = busca.num_conflitos;
+    response.num_cores_busca_local_melhor_melhora_troca_vertice = maxCor;
 
     response.size_clique = k;
     response.delta_clique = (float)(maxCor - k) / k;
