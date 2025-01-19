@@ -1,5 +1,6 @@
 #include <iostream>
 #include <fstream>
+#include <vector>
 #include <string>
 #include <sstream>
 #include <math.h>
@@ -298,12 +299,12 @@ int main()
     // }
     file.close();
 
-    processaInstancia(DSJ_FILES, graphsData);
-    processaInstancia(REG_FILES, graphsData);
-    processaInstancia(LAT_FILES, graphsData);
-    processaInstancia(LEI_FILES, graphsData);
-    processaInstancia(SCH_FILES, graphsData);
-    processaInstancia(SGB_FILES, graphsData);
+    // processaInstancia(DSJ_FILES, graphsData);
+    // processaInstancia(REG_FILES, graphsData);
+    // processaInstancia(LAT_FILES, graphsData);
+    // processaInstancia(LEI_FILES, graphsData);
+    // processaInstancia(SCH_FILES, graphsData);
+    // processaInstancia(SGB_FILES, graphsData);
     processaInstancia(MYC_FILES, graphsData);
     processaInstancia(MIZ_FILES, graphsData);
     processaInstancia(HOS_FILES, graphsData);

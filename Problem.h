@@ -46,7 +46,7 @@ public:
     vector<int> calcClique(Graph &graph);
     vector<int> troca_cores_aleatorio(vector<int> &cores, Graph &graph);
     vector<int> troca(vector<int> &cores, int pos1, int pos2);
-    vector<int> substitui_cor_menos_frequente(vector<int> &cores, Graph &graph);
+    vector<int> substitui_cor_menos_frequente(vector<int> &cores, Graph &graph, int cor_menos_frequente);
     ResponseMaxColor getMaxColor(Graph &Graph, int num_vertices, int &grauMaximo);
     HeuristicaConstrutivaResponse heuristicaConstrutiva(Graph &graph, int k);
     int calcConflitoVertice(vector<int> &cores, Graph &graph, int vertice);
@@ -58,6 +58,7 @@ public:
     ResponseBuscaLocal busca_local_melhor_melhora(Graph &graph, vector<int> &solucao_inicial, int iteracoes);
     ResponseBuscaLocal busca_local_primeira_melhora(Graph &graph, vector<int> &solucao_inicial, int iteracoes);
     ResponseBuscaLocal busca_local_primeira_melhora_cor_menos_frequente(Graph &graph, vector<int> &solucao_inicial, int iteracoes);
+    ResponseBuscaLocal busca_local_melhor_melhora_cor_menos_frequente(Graph &graph, vector<int> &solucao_inicial, int iteracoes);
 };
 
 vector<int> Problem::rankCorPorMenorFrequencia(unordered_map<int, int> &frequencias)
@@ -68,46 +69,45 @@ vector<int> Problem::rankCorPorMenorFrequencia(unordered_map<int, int> &frequenc
     while (!frequencias_aux.empty())
     {
         auto menorFreqIt = min_element(
-            frequencias.begin(), frequencias.end(),
+            frequencias_aux.begin(), frequencias_aux.end(),
             [](const pair<int, int> &a, const pair<int, int> &b)
             {
                 return a.second < b.second;
             });
 
-        rank_cores.push_back(menorFreqIt->first);
+        if (menorFreqIt->first != 0)
+            rank_cores.push_back(menorFreqIt->first);
 
-        frequencias.erase(menorFreqIt);
+        frequencias_aux.erase(menorFreqIt);
     }
     return rank_cores;
 }
 
-ResponseBuscaLocal Problem::busca_local_primeira_melhora_cor_menos_frequente(Graph &graph, vector<int> &solucao_inicial, int iteracoes)
+ResponseBuscaLocal Problem::busca_local_melhor_melhora_cor_menos_frequente(Graph &graph, vector<int> &solucao_inicial, int iteracoes)
 {
     vector<int> solucao = solucao_inicial;
     vector<int> melhor_vizinho = solucao;
+
     int melhor_custo = *max_element(solucao.begin(), solucao.end());
     int melhor_conflito = calcConflitoTotal(solucao, graph);
+
     vector<int> vertices_ordenados_conflitos = ordenaVerticesPorConflito(solucao, graph);
-    unordered_map<int, int> frequenciaCores = calcFrequenciaCores(melhor_vizinho);
-    vector<int> rank_cores_menor_frequencia = rankCorPorMenorFrequencia(frequenciaCores);
 
     int cont_iteracoes = 0;
-    for (int i = 0; i < vertices_ordenados_conflitos.size(); i++)
+    while (true)
     {
+        unordered_map<int, int> frequenciaCores = calcFrequenciaCores(melhor_vizinho);
+        vector<int> rank_cores_menor_frequencia = rankCorPorMenorFrequencia(frequenciaCores);
 
-        for (CoupleVertice aresta : graph.get_neighbors(i))
+        for (int i = 0; i < rank_cores_menor_frequencia.size(); i++)
         {
 
-            int vertice1 = i;
-            int vertice2 = aresta.vertice2;
-            vector<int> vizinho = troca(melhor_vizinho, vertice1, vertice2);
+            vector<int> vizinho = substitui_cor_menos_frequente(melhor_vizinho, graph, rank_cores_menor_frequencia[i]);
             int conflito_vizinho = calcConflitoTotal(vizinho, graph);
             if (conflito_vizinho < melhor_conflito)
             {
-
                 melhor_vizinho = vizinho;
                 melhor_conflito = conflito_vizinho;
-                break;
             }
             cont_iteracoes++;
             if (cont_iteracoes == iteracoes)
@@ -128,43 +128,73 @@ ResponseBuscaLocal Problem::busca_local_primeira_melhora_cor_menos_frequente(Gra
     return response;
 }
 
-vector<int> Problem::substitui_cor_menos_frequente(vector<int> &cores, Graph &graph)
+ResponseBuscaLocal Problem::busca_local_primeira_melhora_cor_menos_frequente(Graph &graph, vector<int> &solucao_inicial, int iteracoes)
 {
-    int num_vertices = graph.get_num_vertices();
-    unordered_map<int, int> frequencias = calcFrequenciaCores(cores);
-    int cor_menos_frequente = -1;
-    int menor_frequencia = num_vertices + 1;
-    for (auto &par : frequencias)
+    vector<int> solucao = solucao_inicial;
+    vector<int> melhor_vizinho = solucao;
+
+    int melhor_custo = *max_element(solucao.begin(), solucao.end());
+    int melhor_conflito = calcConflitoTotal(solucao, graph);
+
+    vector<int> vertices_ordenados_conflitos = ordenaVerticesPorConflito(solucao, graph);
+
+    unordered_map<int, int> frequenciaCores = calcFrequenciaCores(solucao);
+
+    vector<int> rank_cores_menor_frequencia = rankCorPorMenorFrequencia(frequenciaCores);
+
+    int cont_iteracoes = 0;
+    for (int i = 0; i < rank_cores_menor_frequencia.size(); i++)
     {
-        if (par.second < menor_frequencia)
+
+        vector<int> vizinho = substitui_cor_menos_frequente(melhor_vizinho, graph, rank_cores_menor_frequencia[i]);
+        int conflito_vizinho = calcConflitoTotal(vizinho, graph);
+        if (conflito_vizinho < melhor_conflito)
         {
-            menor_frequencia = par.second;
-            cor_menos_frequente = par.first;
+            melhor_vizinho = vizinho;
+            melhor_conflito = conflito_vizinho;
+            break;
+        }
+        cont_iteracoes++;
+        if (cont_iteracoes == iteracoes)
+        {
+            break;
         }
     }
 
+    ResponseBuscaLocal response;
+    response.solucao_encontrada = melhor_vizinho;
+    response.num_conflitos = melhor_conflito;
+
+    return response;
+}
+
+vector<int> Problem::substitui_cor_menos_frequente(vector<int> &cores, Graph &graph, int cor_menos_frequente)
+{
+    int num_vertices = graph.get_num_vertices();
+    vector<int> cores_aux = cores;
+
     for (int i = 0; i < num_vertices; ++i)
     {
-        if (cores[i] == cor_menos_frequente)
+        if (cores_aux[i] == cor_menos_frequente)
         {
             set<int> cores_vizinhas;
             for (CoupleVertice vizinho : graph.get_neighbors(i))
             {
-                cores_vizinhas.insert(cores[vizinho.vertice2]);
+                cores_vizinhas.insert(cores_aux[vizinho.vertice2]);
             }
 
             for (int nova_cor = 1;; ++nova_cor)
             {
                 if (cores_vizinhas.find(nova_cor) == cores_vizinhas.end())
                 {
-                    cores[i] = nova_cor;
+                    cores_aux[i] = nova_cor;
                     break;
                 }
             }
         }
     }
 
-    return cores;
+    return cores_aux;
 };
 
 unordered_map<int, int> Problem::calcFrequenciaCores(vector<int> &solucao)
@@ -506,6 +536,11 @@ HeuristicaConstrutivaResponse Problem::heuristicaConstrutiva(Graph &graph, int i
 
     // ResponseBuscaLocal busca = busca_local_primeira_melhora(graph, responseMaxColor.cores, 1000);
     // cout << "busca local primeira melhora -- conflito: " << busca.num_conflitos << endl;
+
+    ResponseBuscaLocal busca = busca_local_primeira_melhora_cor_menos_frequente(graph, responseMaxColor.cores, 10000);
+    cout << "busca local primeira melhora cor menos frequente -- conflito: " << busca.num_conflitos << endl;
+    busca = busca_local_melhor_melhora_cor_menos_frequente(graph, responseMaxColor.cores, 10000);
+    cout << "busca local melhor melhora cor menos frequente -- conflito: " << busca.num_conflitos << endl;
 
     // busca = busca_local_melhor_melhora(graph, responseMaxColor.cores, 1000);
     // cout << "busca local melhor melhora -- conflito depois: " << busca.num_conflitos << endl;
