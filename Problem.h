@@ -13,6 +13,8 @@
 #include <unordered_set>
 #include "Graph.h"
 #include <deque>
+#include <queue>
+#include <math.h>
 
 using namespace std;
 using namespace chrono;
@@ -36,12 +38,44 @@ struct HeuristicaConstrutivaResponse
     int num_conflitos_busca_local_primeira_melhora_cor_menos_frequente;
     int num_cores_busca_local_melhor_melhora_cor_menos_frequente;
     int num_conflitos_busca_local_melhor_melhora_cor_menos_frequente;
+    int num_cores_tabu_troca_vertice;
+    int num_conflitos_tabu_troca_vertice;
+    int num_cores_tabu_menor_frequencia;
+    int num_conflitos_tabu_menor_frequencia;
+    int num_cores_genetico;
+    int num_conflitos_genetico;
 };
 
 struct ResponseMaxColor
 {
     vector<int> cores;
     int maxColor;
+};
+
+struct Solucao
+{
+    vector<int> solucao;
+    int num_conflitos;
+    int num_cores;
+    double calcularCusto() const
+    {
+        return (0.9 * num_cores) + (0.1 * num_conflitos);
+    }
+    bool operator<(const Solucao &other) const
+    {
+        return calcularCusto() < other.calcularCusto();
+    }
+    bool operator>(const Solucao &other) const
+    {
+        return calcularCusto() < other.calcularCusto();
+    }
+};
+
+struct Selecionados
+{
+    vector<Solucao> selecionados;
+    int num_cores;
+    int num_conflitos;
 };
 
 struct ResponseBuscaLocal
@@ -51,14 +85,29 @@ struct ResponseBuscaLocal
     int num_cores;
 };
 
+struct ItemGenerateNeighbor
+{
+    vector<int> vizinho;
+    int conflitos;
+    int custo;
+};
+
+struct ResponseSubstituiCorMenosFrequente
+{
+    vector<int> solucao;
+    vector<int> vertices_modificados;
+};
+
 class Problem
 {
 public:
     vector<int> calcClique(Graph &graph);
     vector<int> troca_cores_aleatorio(vector<int> &cores, Graph &graph);
     vector<int> troca(vector<int> &cores, int pos1, int pos2);
-    vector<int> substitui_cor_menos_frequente(vector<int> &cores, Graph &graph, int cor_menos_frequente, int max_cores);
+    ResponseSubstituiCorMenosFrequente substitui_cor_menos_frequente(vector<int> &cores, Graph &graph, int cor_menos_frequente, int max_cores);
     ResponseMaxColor getMaxColor(Graph &Graph, int num_vertices, int &grauMaximo);
+    ItemGenerateNeighbor tabu_col(Graph &graph, int k, int tabu_size, int rep, int iteracoes, vector<int> &solucao_inicial, int conflito_inicial);
+    ItemGenerateNeighbor tabu_col_menor_frequencia(Graph &graph, int k, int tabu_size, int rep, int iteracoes, vector<int> &solucao_inicial, int conflito_inicial);
     HeuristicaConstrutivaResponse heuristicaConstrutiva(Graph &graph, int k);
     int calcConflitoVertice(vector<int> &cores, Graph &graph, int vertice);
     int calcConflitoTotal(vector<int> &cores, Graph &graph);
@@ -71,10 +120,160 @@ public:
     ResponseBuscaLocal busca_local_primeira_melhora(Graph &graph, vector<int> &solucao_inicial, int iteracoes);
     ResponseBuscaLocal busca_local_primeira_melhora_cor_menos_frequente(Graph &graph, vector<int> &solucao_inicial, int iteracoes);
     ResponseBuscaLocal busca_local_melhor_melhora_cor_menos_frequente(Graph &graph, vector<int> &solucao_inicial, int iteracoes);
-    vector<vector<int>> generate_neighbors(Graph &graph, vector<int> &solucao_inicial, int, int rep, set<pair<int, int>> &tabu_list, int conflitos_atuais);
-    vector<vector<int>> generate_neighbors_tabu(Graph &graph, vector<int> &current_solution, int k, int rep, const set<pair<int, int>> &tabu_list, int current_conflicts);
+    vector<ItemGenerateNeighbor> generate_neighbors_tabu(Graph &graph, vector<int> &current_solution, int k, int rep, const set<pair<int, int>> &tabu_list, int current_conflicts);
+    vector<ItemGenerateNeighbor> generate_neighbors_tabu_menor_frequencia(Graph &graph, vector<int> &current_solution, int k, int rep, const set<pair<int, int>> &tabu_list, int current_conflicts);
+    void geraPopulacaoInicial(Graph &graph, vector<Solucao> &populacao, int num_solucoes);
+    Solucao geraSolucaoAleatoria(Graph &graph);
+    Solucao algoritmoGenetico(Graph &graph, vector<Solucao> &populacaoInicial, int num_solucoes, int num_geracoes, int num_mutacoes, int num_selecionados);
+    vector<int> torneio(vector<Solucao> &populacao, int num_vencedores);
+    Solucao recombinacao(Graph &graph, Solucao &pai1, Solucao &pai2);
+    void mutacaoAleatoria(Graph &graph, Solucao &solucao, int max_cor);
 };
 
+void Problem::mutacaoAleatoria(Graph &graph, Solucao &solucao, int max_cor)
+{
+    int vertice = rand() % solucao.solucao.size();
+    int cor = (rand() % max_cor);
+    solucao.solucao[vertice] = cor;
+    solucao.num_conflitos = calcConflitoTotal(solucao.solucao, graph);
+    solucao.num_cores = *max_element(solucao.solucao.begin(), solucao.solucao.end());
+}
+
+Solucao Problem::recombinacao(Graph &graph, Solucao &pai1, Solucao &pai2)
+{
+    Solucao filho;
+    int ponto_corte_1 = rand() % pai1.solucao.size();
+    int ponto_corte_2 = -1;
+
+    while (ponto_corte_2 < ponto_corte_1)
+    {
+        ponto_corte_2 = rand() % pai1.solucao.size();
+    }
+
+    for (int i = 0; i < pai1.solucao.size(); i++)
+    {
+        if (i < ponto_corte_1 || i > ponto_corte_2)
+        {
+            filho.solucao.push_back(pai1.solucao[i]);
+        }
+        else
+        {
+            filho.solucao.push_back(pai2.solucao[i]);
+        }
+    }
+
+    filho.num_conflitos = calcConflitoTotal(filho.solucao, graph);
+    filho.num_cores = *max_element(filho.solucao.begin(), filho.solucao.end());
+
+    return filho;
+}
+
+vector<int> Problem::torneio(vector<Solucao> &populacao, int num_vencedores)
+{
+    vector<int> vencedores;
+
+    while (vencedores.size() < num_vencedores)
+    {
+        int index = rand() % populacao.size();
+        if (find(vencedores.begin(), vencedores.end(), index) == vencedores.end())
+        {
+            vencedores.push_back(index);
+        }
+    }
+
+    return vencedores;
+}
+
+Solucao Problem::algoritmoGenetico(Graph &graph, vector<Solucao> &populacaoInicial, int num_solucoes, int num_geracoes, int num_mutacoes, int num_selecionados)
+{
+    vector<Solucao> populacao = populacaoInicial;
+    geraPopulacaoInicial(graph, populacao, num_solucoes);
+
+    for (int i = 0; i < num_geracoes; i++)
+    {
+        vector<int> selecionados = torneio(populacao, num_selecionados);
+        priority_queue<Solucao, vector<Solucao>, greater<Solucao>> heap;
+
+        for (Solucao individuo : populacao)
+        {
+            heap.push(individuo);
+            if (heap.size() > num_solucoes)
+            {
+                heap.pop();
+            }
+        }
+
+        for (int selecionado : selecionados)
+        {
+            for (int j = 0; j < populacao.size(); j++)
+            {
+                if (selecionado != j)
+                {
+                    Solucao filho = recombinacao(graph, populacao[selecionado], populacao[j]);
+                    heap.push(filho);
+                    if (heap.size() > num_solucoes)
+                    {
+                        heap.pop();
+                    }
+                }
+            }
+        }
+
+        vector<Solucao> recombinacoes;
+        while (!heap.empty())
+        {
+            recombinacoes.push_back(heap.top());
+            heap.pop();
+        }
+
+        vector<bool> mutados(recombinacoes.size(), false);
+        for (int j = 0; j < num_mutacoes; j++)
+        {
+            int index = 0;
+
+            do
+            {
+
+                index = rand() % recombinacoes.size();
+
+            } while (mutados[index]);
+
+            mutados[index] = true;
+            mutacaoAleatoria(graph, recombinacoes[index], recombinacoes[index].num_cores);
+        }
+
+        populacao = recombinacoes;
+    }
+
+    return populacao[0];
+}
+
+Solucao Problem::geraSolucaoAleatoria(Graph &graph)
+{
+    srand(time(0));
+    int num_vertices = graph.get_num_vertices();
+    vector<int> solucao(num_vertices);
+    for (int i = 0; i < num_vertices; i++)
+    {
+        solucao[i] = rand() % (num_vertices);
+    }
+    Solucao solucao_calculada;
+    solucao_calculada.solucao = solucao;
+    solucao_calculada.num_conflitos = calcConflitoTotal(solucao, graph);
+    solucao_calculada.num_cores = *max_element(solucao.begin(), solucao.end());
+    return solucao_calculada;
+}
+
+void Problem::geraPopulacaoInicial(Graph &graph, vector<Solucao> &populacao, int num_solucoes)
+{
+    int qtd_a_gerar = num_solucoes - populacao.size();
+
+    for (int i = 0; i < qtd_a_gerar; i++)
+    {
+        Solucao solucao = geraSolucaoAleatoria(graph);
+        populacao.push_back(solucao);
+    }
+}
 int Problem::calcCusto(unordered_map<int, int> &frequencias)
 {
     int custo = 0;
@@ -131,25 +330,25 @@ ResponseBuscaLocal Problem::busca_local_melhor_melhora_cor_menos_frequente(Graph
         for (int i = 0; i < rank_cores_menor_frequencia.size(); i++)
         {
 
-            vector<int> vizinho = substitui_cor_menos_frequente(melhor_vizinho, graph, rank_cores_menor_frequencia[i], melhor_custo_global);
-            int conflito_vizinho = calcConflitoTotal(vizinho, graph);
-            unordered_map<int, int> frequenciaVizinho = calcFrequenciaCores(vizinho);
+            ResponseSubstituiCorMenosFrequente vizinho = substitui_cor_menos_frequente(melhor_vizinho, graph, rank_cores_menor_frequencia[i], melhor_custo_global);
+            int conflito_vizinho = calcConflitoTotal(vizinho.solucao, graph);
+            unordered_map<int, int> frequenciaVizinho = calcFrequenciaCores(vizinho.solucao);
             int custo_vizinho = calcCusto(frequenciaVizinho);
 
             if (custo_vizinho < melhor_custo_global && conflito_vizinho <= melhor_conflito)
             {
-                melhor_vizinho = vizinho;
+                melhor_vizinho = vizinho.solucao;
                 melhor_conflito = conflito_vizinho;
                 melhor_custo_global = custo_vizinho;
                 frequenciaCores = frequenciaVizinho;
-                melhor_vizinho_local = vizinho;
+                melhor_vizinho_local = vizinho.solucao;
                 melhor_conflito_local = conflito_vizinho;
                 melhor_custo_local = custo_vizinho;
                 frequenciaCores_local = frequenciaVizinho;
             }
             else if (conflito_vizinho < melhor_conflito_local)
             {
-                melhor_vizinho_local = vizinho;
+                melhor_vizinho_local = vizinho.solucao;
                 melhor_conflito_local = conflito_vizinho;
                 melhor_custo_local = custo_vizinho;
                 frequenciaCores_local = frequenciaVizinho;
@@ -203,13 +402,13 @@ ResponseBuscaLocal Problem::busca_local_primeira_melhora_cor_menos_frequente(Gra
         for (int i = 0; i < rank_cores_menor_frequencia.size(); i++)
         {
 
-            vector<int> vizinho = substitui_cor_menos_frequente(melhor_vizinho, graph, rank_cores_menor_frequencia[i], melhor_custo);
-            int conflito_vizinho = calcConflitoTotal(vizinho, graph);
-            unordered_map<int, int> frequenciaVizinho = calcFrequenciaCores(vizinho);
+            ResponseSubstituiCorMenosFrequente vizinho = substitui_cor_menos_frequente(melhor_vizinho, graph, rank_cores_menor_frequencia[i], melhor_custo);
+            int conflito_vizinho = calcConflitoTotal(vizinho.solucao, graph);
+            unordered_map<int, int> frequenciaVizinho = calcFrequenciaCores(vizinho.solucao);
             int custo_vizinho = calcCusto(frequenciaVizinho);
             if (conflito_vizinho < melhor_conflito || (conflito_vizinho == melhor_conflito && custo_vizinho < melhor_custo))
             {
-                melhor_vizinho = vizinho;
+                melhor_vizinho = vizinho.solucao;
                 melhor_conflito = conflito_vizinho;
                 melhor_custo = custo_vizinho;
                 frequenciaCores = frequenciaVizinho;
@@ -233,10 +432,11 @@ ResponseBuscaLocal Problem::busca_local_primeira_melhora_cor_menos_frequente(Gra
     return response;
 }
 
-vector<int> Problem::substitui_cor_menos_frequente(vector<int> &cores, Graph &graph, int cor_menos_frequente, int max_cores)
+ResponseSubstituiCorMenosFrequente Problem::substitui_cor_menos_frequente(vector<int> &cores, Graph &graph, int cor_menos_frequente, int max_cores)
 {
     int num_vertices = graph.get_num_vertices();
     vector<int> cores_aux = cores;
+    vector<int> vertices_modificados;
 
     for (int i = 0; i < num_vertices; ++i)
     {
@@ -253,13 +453,16 @@ vector<int> Problem::substitui_cor_menos_frequente(vector<int> &cores, Graph &gr
                 if (cores_vizinhas.find(nova_cor) == cores_vizinhas.end())
                 {
                     cores_aux[i] = nova_cor;
+                    vertices_modificados.push_back(i);
                     break;
                 }
             }
         }
     }
-
-    return cores_aux;
+    ResponseSubstituiCorMenosFrequente response;
+    response.solucao = cores_aux;
+    response.vertices_modificados = vertices_modificados;
+    return response;
 };
 
 unordered_map<int, int> Problem::calcFrequenciaCores(vector<int> &solucao)
@@ -371,7 +574,7 @@ ResponseBuscaLocal Problem::busca_local_melhor_melhora(Graph &graph, vector<int>
             int conflito_vizinho = calcConflitoTotal(vizinho, graph);
             if (conflito_vizinho < melhor_conflito)
             {
-                // cout << "feitas " << cont_iteracoes << " iteracoes  n conflitos " << conflito_vizinho << endl;
+
                 melhor_vizinho = vizinho;
                 melhor_conflito = conflito_vizinho;
             }
@@ -382,12 +585,6 @@ ResponseBuscaLocal Problem::busca_local_melhor_melhora(Graph &graph, vector<int>
             }
         }
 
-        // int custo_vizinho = *max_element(vizinho.begin(), vizinho.end());
-
-        // if (i == iteracoes - 1)
-        // {
-        //     cout << "feitas " << iteracoes - 1 << " iteracoes " << endl;
-        // }
         if (cont_iteracoes == iteracoes)
         {
             break;
@@ -401,81 +598,122 @@ ResponseBuscaLocal Problem::busca_local_melhor_melhora(Graph &graph, vector<int>
     return response;
 }
 
-vector<vector<int>> generate_neighbors_tabu(Graph &graph, vector<int> &solucao_inicial, int k, int rep, const set<pair<int, int>> &tabu_list, int current_conflicts)
+vector<ItemGenerateNeighbor> Problem::generate_neighbors_tabu(Graph &graph, vector<int> &solucao_inicial, int k, int rep, const set<pair<int, int>> &tabu_list, int current_conflicts)
 {
     vector<int> solucao = solucao_inicial;
     vector<int> melhor_vizinho = solucao;
-    int melhor_custo = *max_element(solucao.begin(), solucao.end());
-    int melhor_conflito = calcConflitoTotal(solucao, graph);
+    int melhor_custo = k;
+    int melhor_conflito = current_conflicts;
     vector<int> vertices_ordenados = ordenaVerticesPorConflito(solucao, graph);
-    vector<vector<int>> neighbors;
-
-    int iteracoes = 0;
+    vector<ItemGenerateNeighbor> vizinhos;
 
     for (int vertice : vertices_ordenados)
     {
-        if (iteracoes >= rep)
+        if (vizinhos.size() >= rep)
             break;
 
-        for (int vizinho : graph.get_neighbors(vertice))
+        for (CoupleVertice aresta : graph.get_neighbors(vertice))
         {
-            if (iteracoes >= rep)
+            if (vizinhos.size() >= rep)
                 break;
 
-            vector<int> neighbor = solucao;
-            troca(neighbor, vertice, vizinho);
+            vector<int> vizinho = troca(solucao, vertice, aresta.vertice2);
 
-            int new_conflicts = calcConflitoTotal(neighbor, graph);
+            int new_conflicts = calcConflitoTotal(vizinho, graph);
 
-            // Adiciona se não estiver na lista tabu ou se atender a condição de aspiração
-            if (tabu_list.find({vertice, neighbor[vertice]}) == tabu_list.end() || new_conflicts < current_conflicts)
+            if (tabu_list.find({vertice, vizinho[vertice]}) == tabu_list.end() || new_conflicts < current_conflicts)
             {
-                neighbors.push_back(neighbor);
-                iteracoes++;
+                ItemGenerateNeighbor vizinho_item;
+                vizinho_item.vizinho = vizinho;
+                vizinho_item.conflitos = new_conflicts;
+                vizinhos.push_back(vizinho_item);
             }
         }
     }
 
-    return neighbors;
+    return vizinhos;
 }
 
-// Implementação do algoritmo TABUCOL
-vector<int> tabu_col(Graph &graph, int k, int tabu_size, int rep, int iteracoes, vector<int> &solucao_inicial)
+vector<ItemGenerateNeighbor> Problem::generate_neighbors_tabu_menor_frequencia(Graph &graph, vector<int> &solucao_inicial, int k, int rep, const set<pair<int, int>> &tabu_list, int current_conflicts)
 {
-    srand(time(0));
+    vector<int> solucao = solucao_inicial;
+    vector<int> melhor_vizinho = solucao;
+    int melhor_custo = k;
+    int melhor_conflito = current_conflicts;
+    vector<int> vertices_ordenados = ordenaVerticesPorConflito(solucao, graph);
+    unordered_map<int, int> frequenciaCores = calcFrequenciaCores(melhor_vizinho);
 
-    vector<int> current_solution = solucao_inicial;
-    int current_conflicts = calcConflitoTotal(current_solution, graph);
+    vector<int> rank_cores_menor_frequencia = rankCorPorMenorFrequencia(frequenciaCores);
+    vector<ItemGenerateNeighbor> vizinhos;
 
-    deque<pair<int, int>> tabu_list; // Lista tabu (FIFO)
-    int nbiter = 0;
-
-    while (current_conflicts > 0 && nbiter < iteracoes)
+    for (int i = 0; i < rank_cores_menor_frequencia.size(); i++)
     {
-        vector<vector<int>> neighbors = generate_neighbors_tabu(graph, current_solution, k, rep, {tabu_list.begin(), tabu_list.end()}, current_conflicts);
+        if (vizinhos.size() >= rep)
+            break;
 
-        // Seleciona o melhor vizinho
-        vector<int> best_neighbor = current_solution;
-        int best_conflicts = numeric_limits<int>::max();
+        ResponseSubstituiCorMenosFrequente vizinho = substitui_cor_menos_frequente(solucao, graph, rank_cores_menor_frequencia[i], melhor_custo);
+        int conflito_vizinho = calcConflitoTotal(vizinho.solucao, graph);
+        unordered_map<int, int> frequenciaVizinho = calcFrequenciaCores(vizinho.solucao);
+        int custo_vizinho = calcCusto(frequenciaVizinho);
 
-        for (const vector<int> &neighbor : neighbors)
+        bool tabu = false;
+        for (int vertice : vizinho.vertices_modificados)
         {
-            int neighbor_conflicts = calcConflitoTotal(neighbor, graph);
-            if (neighbor_conflicts < best_conflicts)
+            if (tabu_list.find({vertice, vizinho.solucao[vertice]}) != tabu_list.end())
             {
-                best_neighbor = neighbor;
-                best_conflicts = neighbor_conflicts;
+                tabu = true;
+                break;
             }
         }
 
-        // Atualiza a lista tabu
-        if (current_solution != best_neighbor)
+        if (!tabu || conflito_vizinho < current_conflicts || (custo_vizinho < melhor_custo && conflito_vizinho < current_conflicts))
+        {
+            ItemGenerateNeighbor vizinho_item;
+            vizinho_item.vizinho = vizinho.solucao;
+            vizinho_item.conflitos = conflito_vizinho;
+            vizinho_item.custo = custo_vizinho;
+            vizinhos.push_back(vizinho_item);
+        }
+    }
+
+    return vizinhos;
+}
+
+ItemGenerateNeighbor Problem::tabu_col(Graph &graph, int k, int tabu_size, int rep, int iteracoes, vector<int> &solucao_inicial, int conflito_inicial)
+{
+    srand(time(0));
+
+    ItemGenerateNeighbor vizinho_atual;
+    vizinho_atual.vizinho = solucao_inicial;
+    vizinho_atual.conflitos = conflito_inicial;
+    vizinho_atual.custo = k;
+
+    deque<pair<int, int>> tabu_list;
+    int nbiter = 0;
+
+    while (vizinho_atual.conflitos > 0 && nbiter < iteracoes)
+    {
+        vector<ItemGenerateNeighbor> neighbors = generate_neighbors_tabu(graph, vizinho_atual.vizinho, k, rep, {tabu_list.begin(), tabu_list.end()}, vizinho_atual.conflitos);
+
+        ItemGenerateNeighbor melhor_vizinho;
+        melhor_vizinho.vizinho = vizinho_atual.vizinho;
+        melhor_vizinho.conflitos = numeric_limits<int>::max();
+
+        for (const ItemGenerateNeighbor &neighbor : neighbors)
+        {
+            if (neighbor.conflitos < melhor_vizinho.conflitos)
+            {
+                melhor_vizinho = neighbor;
+            }
+        }
+
+        if (vizinho_atual.vizinho != melhor_vizinho.vizinho)
         {
             for (int i = 0; i < graph.get_num_vertices(); ++i)
             {
-                if (current_solution[i] != best_neighbor[i])
+                if (vizinho_atual.vizinho[i] != melhor_vizinho.vizinho[i])
                 {
-                    tabu_list.push_back({i, best_neighbor[i]});
+                    tabu_list.push_back({i, melhor_vizinho.vizinho[i]});
                     if (tabu_list.size() > tabu_size)
                     {
                         tabu_list.pop_front();
@@ -485,23 +723,68 @@ vector<int> tabu_col(Graph &graph, int k, int tabu_size, int rep, int iteracoes,
             }
         }
 
-        // Atualiza a solução corrente
-        current_solution = best_neighbor;
-        current_conflicts = best_conflicts;
+        vizinho_atual = melhor_vizinho;
 
         nbiter++;
     }
 
-    if (current_conflicts == 0)
+    return vizinho_atual;
+}
+
+ItemGenerateNeighbor Problem::tabu_col_menor_frequencia(Graph &graph, int k, int tabu_size, int rep, int iteracoes, vector<int> &solucao_inicial, int conflito_inicial)
+{
+    srand(time(0));
+
+    ItemGenerateNeighbor vizinho_atual;
+    vizinho_atual.vizinho = solucao_inicial;
+    vizinho_atual.conflitos = conflito_inicial;
+    vizinho_atual.custo = k;
+
+    deque<pair<int, int>> tabu_list;
+    int nbiter = 0;
+
+    while (nbiter < iteracoes)
     {
-        cout << "Coloração encontrada com " << k << " cores." << endl;
-    }
-    else
-    {
-        cout << "Nenhuma coloração encontrada com " << k << " cores." << endl;
+        vector<ItemGenerateNeighbor> neighbors = generate_neighbors_tabu_menor_frequencia(graph, vizinho_atual.vizinho, vizinho_atual.custo, rep, {tabu_list.begin(), tabu_list.end()}, vizinho_atual.conflitos);
+
+        ItemGenerateNeighbor melhor_vizinho;
+        melhor_vizinho.vizinho = vizinho_atual.vizinho;
+        melhor_vizinho.conflitos = numeric_limits<int>::max();
+
+        for (const ItemGenerateNeighbor &neighbor : neighbors)
+        {
+            if (neighbor.custo < melhor_vizinho.custo && neighbor.conflitos < melhor_vizinho.conflitos)
+            {
+                melhor_vizinho = neighbor;
+            }
+            else if (neighbor.conflitos < melhor_vizinho.conflitos)
+            {
+                melhor_vizinho = neighbor;
+            }
+        }
+
+        if (vizinho_atual.vizinho != melhor_vizinho.vizinho)
+        {
+            for (int i = 0; i < graph.get_num_vertices(); ++i)
+            {
+                if (vizinho_atual.vizinho[i] != melhor_vizinho.vizinho[i])
+                {
+                    tabu_list.push_back({i, melhor_vizinho.vizinho[i]});
+                    if (tabu_list.size() > tabu_size)
+                    {
+                        tabu_list.pop_front();
+                    }
+                    break;
+                }
+            }
+        }
+
+        vizinho_atual = melhor_vizinho;
+
+        nbiter++;
     }
 
-    return current_solution;
+    return vizinho_atual;
 }
 
 int Problem::calcConflitoTotal(vector<int> &cores, Graph &graph)
@@ -675,47 +958,111 @@ HeuristicaConstrutivaResponse Problem::heuristicaConstrutiva(Graph &graph, int i
 
     int num_vertices = graph.get_num_vertices();
     int grauMaximo = 0;
+    cout << "executando construtiva" << endl;
     ResponseMaxColor responseMaxColor = getMaxColor(graph, num_vertices, grauMaximo);
     int maxCor = responseMaxColor.maxColor;
 
     int conflitos = calcConflitoTotal(responseMaxColor.cores, graph);
 
     response.num_conflitos = conflitos;
+    vector<Solucao> populacaoInicialSolucoes;
 
-    cout << "conflito antes: " << conflitos << " maxCorAntes: " << maxCor << endl;
+    Solucao solucao_heuristica;
+    solucao_heuristica.solucao = responseMaxColor.cores;
+    solucao_heuristica.num_conflitos = conflitos;
+    solucao_heuristica.num_cores = maxCor;
+    populacaoInicialSolucoes.push_back(solucao_heuristica);
+    //////////////////////////////////////////////////////////////////////////////////////////////
+    // ItemGenerateNeighbor resposta_tabu = tabu_col(graph, maxCor, 30, 10, 10000, responseMaxColor.cores, conflitos);
+    // response.num_conflitos_tabu_troca_vertice = resposta_tabu.conflitos;
+    // response.num_cores_tabu_troca_vertice = resposta_tabu.custo;
 
-    ResponseBuscaLocal busca = busca_local_primeira_melhora(graph, responseMaxColor.cores, 10000);
-    cout << "busca local primeira melhora troca vertice-- conflito: " << busca.num_conflitos << endl;
+    // Solucao solucao_tabu;
+    // solucao_tabu.solucao = resposta_tabu.vizinho;
+    // solucao_tabu.num_conflitos = resposta_tabu.conflitos;
+    // solucao_tabu.num_cores = resposta_tabu.custo;
+    // populacaoInicalSolucoes.push_back(solucao_tabu);
+    //////////////////////////////////////////////////////////////////////////////////////////////
+    // resposta_tabu = tabu_col_menor_frequencia(graph, maxCor, 30, 10, 10000, responseMaxColor.cores, conflitos);
+    // response.num_conflitos_tabu_menor_frequencia = resposta_tabu.conflitos;
+    // response.num_cores_tabu_menor_frequencia = resposta_tabu.custo;
 
-    response.num_conflitos_busca_local_primeira_melhora_troca_vertice = busca.num_conflitos;
-    response.num_cores_busca_local_primeira_melhora_troca_vertice = maxCor;
+    // Solucao solucao_tabu_menor_frequencia;
+    // solucao_tabu_menor_frequencia.solucao = resposta_tabu.vizinho;
+    // solucao_tabu_menor_frequencia.num_conflitos = resposta_tabu.conflitos;
+    // solucao_tabu_menor_frequencia.num_cores = resposta_tabu.custo;
+    // // populacaoInicialSolucoes.push_back(solucacao_tabu_menor_frequencia);
+    // //////////////////////////////////////////////////////////////////////////////////////////////
+    // ResponseBuscaLocal busca = busca_local_primeira_melhora(graph, responseMaxColor.cores, 10000);
 
-    busca = busca_local_primeira_melhora_cor_menos_frequente(graph, responseMaxColor.cores, 20000);
-    cout << "busca local primeira melhora cor menos frequente -- conflito: " << busca.num_conflitos << " cor agora: " << busca.num_cores << endl;
+    // response.num_conflitos_busca_local_primeira_melhora_troca_vertice = busca.num_conflitos;
+    // response.num_cores_busca_local_primeira_melhora_troca_vertice = maxCor;
 
-    response.num_conflitos_busca_local_primeira_melhora_cor_menos_frequente = busca.num_conflitos;
-    response.num_cores_busca_local_primeira_melhora_cor_menos_frequente = busca.num_cores;
+    // Solucao solucao_busca_local_primeira_melhora;
+    // solucao_busca_local_primeira_melhora.solucao = busca.solucao_encontrada;
+    // solucao_busca_local_primeira_melhora.num_conflitos = busca.num_conflitos;
+    // solucao_busca_local_primeira_melhora.num_cores = busca.num_cores;
+    // // populacaoInicialSolucoes.push_back(solucao_busca_local_primeira_melhora);
 
-    int n_cor_busca_pri_m_c_f = busca.num_cores;
+    // //////////////////////////////////////////////////////////////////////////////////////////////
+    // busca = busca_local_primeira_melhora_cor_menos_frequente(graph, responseMaxColor.cores, 20000);
 
-    busca = busca_local_melhor_melhora_cor_menos_frequente(graph, responseMaxColor.cores, 20000);
-    cout << "busca local melhor melhora cor menos frequente -- conflito: " << busca.num_conflitos << " cor agora: " << busca.num_cores << endl;
+    // response.num_conflitos_busca_local_primeira_melhora_cor_menos_frequente = busca.num_conflitos;
+    // response.num_cores_busca_local_primeira_melhora_cor_menos_frequente = busca.num_cores;
 
-    response.num_conflitos_busca_local_melhor_melhora_cor_menos_frequente = busca.num_conflitos;
-    response.num_cores_busca_local_melhor_melhora_cor_menos_frequente = busca.num_cores;
+    // Solucao solucao_busca_local_primeira_melhora_cor_menos_frequente;
+    // solucao_busca_local_primeira_melhora_cor_menos_frequente.solucao = busca.solucao_encontrada;
+    // solucao_busca_local_primeira_melhora_cor_menos_frequente.num_conflitos = busca.num_conflitos;
+    // solucao_busca_local_primeira_melhora_cor_menos_frequente.num_cores = busca.num_cores;
+    // populacaoInicialSolucoes.push_back(solucao_busca_local_primeira_melhora_cor_menos_frequente);
 
-    int n_cor_busca_melhor_m_c_m_f = busca.num_cores;
+    // int n_cor_busca_pri_m_c_f = busca.num_cores;
 
-    if (maxCor > n_cor_busca_pri_m_c_f || maxCor > n_cor_busca_melhor_m_c_m_f)
-    {
-        cout << "MELHOROOOOOOOU A COORRRRR!!!!!!!!!##########################" << endl;
-    }
+    //////////////////////////////////////////////////////////////////////////////////////////////
 
-    busca = busca_local_melhor_melhora(graph, responseMaxColor.cores, 10000);
-    cout << "busca local melhor melhora troca vertice -- conflito depois: " << busca.num_conflitos << endl;
+    // busca = busca_local_melhor_melhora_cor_menos_frequente(graph, responseMaxColor.cores, 20000);
+    // response.num_conflitos_busca_local_melhor_melhora_cor_menos_frequente = busca.num_conflitos;
+    // response.num_cores_busca_local_melhor_melhora_cor_menos_frequente = busca.num_cores;
 
-    response.num_conflitos_busca_local_melhor_melhora_troca_vertice = busca.num_conflitos;
-    response.num_cores_busca_local_melhor_melhora_troca_vertice = maxCor;
+    // Solucao solucao_busca_local_melhor_melhora_cor_menos_frequente;
+    // solucao_busca_local_melhora_cor_menos_frequente.solucao = busca.solucao_encontrada;
+    // solucao_busca_local_melhora_cor_menos_frequente.num_conflitos = busca.num_conflitos;
+    // solucao_busca_local_melhora_cor_menos_frequente.num_cores = busca.num_cores;
+    // populacaoInicialSolucoes.push_back(solucao_busca_local_melhor_melhora_cor_menos_frequente);
+
+    // int n_cor_busca_melhor_m_c_m_f = busca.num_cores;
+
+    //////////////////////////////////////////////////////////////////////////////////////////////
+
+    // busca = busca_local_melhor_melhora(graph, responseMaxColor.cores, 10000);
+
+    // response.num_conflitos_busca_local_melhor_melhora_troca_vertice = busca.num_conflitos;
+    // response.num_cores_busca_local_melhor_melhora_troca_vertice = maxCor;
+    // Solucao solucao_busca_local_melhor_melhora;
+    // solucao_busca_local_melhor_melhora.solucao = busca.solucao_encontrada;
+    // solucao_busca_local_melhor_melhora.num_conflitos = busca.num_conflitos;
+    // solucao_busca_local_melhor_melhora.num_cores = busca.num_cores;
+    // populacaoInicialSolucoes.push_back(solucao_busca_local_melhor_melhora);
+
+    //////////////////////////////////////////////////////////////////////////////////////////////
+
+    int num_solucoes = 20;
+    int num_geracoes = 10000;
+    int num_mutacoes = 4;
+    int num_selecionados = 6;
+
+    cout << "executando genético" << endl;
+    auto inicio = high_resolution_clock::now();
+    Solucao solucaoGenetica = algoritmoGenetico(graph, populacaoInicialSolucoes, num_solucoes, num_geracoes, num_mutacoes, num_selecionados);
+    response.num_cores_genetico = solucaoGenetica.num_cores;
+    response.num_conflitos_genetico = solucaoGenetica.num_conflitos;
+    auto fim = high_resolution_clock::now();
+
+    // Calcula a duração
+    auto duracao = duration_cast<milliseconds>(fim - inicio);
+
+    cout << "Tempo de execução: " << duracao.count() << " ms" << endl;
+    // cout << "Solucao Genetico: " << solucaoGenetica.num_cores << " " << solucaoGenetica.num_conflitos << endl;
 
     response.size_clique = k;
     response.delta_clique = (float)(maxCor - k) / k;

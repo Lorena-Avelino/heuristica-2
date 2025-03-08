@@ -8,6 +8,7 @@
 #include "Graph.h"
 #include "Problem.h"
 #include <ctime>
+#include <queue>
 #include <set>
 #include <algorithm>
 
@@ -153,11 +154,15 @@ struct DataGraph
     HeuristicaConstrutivaResponse data;
 };
 
-void processaInstancia(vector<string> namesFiles, vector<DataGraph> &graphsData)
+void processaInstancia(vector<string> namesFiles, vector<DataGraph> &graphsData, double *porcentagem_processamento, double porcentagem_each_graph)
 {
+
+    cout << "Comecando" << endl;
+
     Problem problem;
     for (int i = 0; i < namesFiles.size(); i++)
     {
+        cout << "Iniciando leitura do arquivo " << namesFiles[i] << endl;
         Graph graph;
         graph.read_from_file(namesFiles[i]);
         HeuristicaConstrutivaResponse response = problem.heuristicaConstrutiva(graph);
@@ -167,92 +172,40 @@ void processaInstancia(vector<string> namesFiles, vector<DataGraph> &graphsData)
         graphsData.push_back(dataGraph);
         cout << "-- Grafo [" << namesFiles[i] << "]com nVertices: " << graph.get_num_vertices();
         cout << " - Cores: " << response.num_cores_encontradas
+             << " - Conflitos: " << response.num_conflitos
              << " - Clique: " << response.size_clique
              << " - Delta: " << response.delta_clique
              << " - Arestas: " << response.num_arestas
-             << " - DArestas: " << response.densidade_arestas << endl
-             << "------------------------------------------------------------------------------"
-             << endl;
+             << " - DArestas: " << response.densidade_arestas << endl;
+        cout << " - Cores genético: " << response.num_cores_genetico << " - Conflitos genético: " << response.num_conflitos_genetico << endl;
+        cout << "Finalizando leitura do arquivo " << namesFiles[i] << endl;
+        *porcentagem_processamento += porcentagem_each_graph;
+        cout << "Porcentagem de processamento: " << *porcentagem_processamento << "%" << endl;
     }
 };
 
-vector<int> substitui_cor_menos_frequente(vector<int> &cores, Graph &graph)
-{
-    int num_vertices = graph.get_num_vertices();
-    unordered_map<int, int> frequencias;
-
-    for (int cor : cores)
-    {
-        frequencias[cor]++;
-    }
-
-    int cor_menos_frequente = -1;
-    int menor_frequencia = num_vertices + 1;
-    for (auto &par : frequencias)
-    {
-        if (par.second < menor_frequencia)
-        {
-            menor_frequencia = par.second;
-            cor_menos_frequente = par.first;
-        }
-    }
-
-    for (int i = 0; i < num_vertices; ++i)
-    {
-        if (cores[i] == cor_menos_frequente)
-        {
-            set<int> cores_vizinhas;
-            for (CoupleVertice vizinho : graph.get_neighbors(i))
-            {
-                cores_vizinhas.insert(cores[vizinho.vertice2]);
-            }
-
-            for (int nova_cor = 1;; ++nova_cor)
-            {
-                if (cores_vizinhas.find(nova_cor) == cores_vizinhas.end())
-                {
-                    cores[i] = nova_cor;
-                    break;
-                }
-            }
-        }
-    }
-
-    return cores;
-}
-
-vector<int> busca_local(Graph &graph, vector<int> &solucao_inicial, bool melhorMelhora, vector<int> (*vizinhanca)(vector<int> &, Graph &))
-{
-    vector<int> solucao = solucao_inicial;
-    vector<int> melhor_solucao = solucao;
-    int melhor_custo = *max_element(solucao.begin(), solucao.end());
-
-    while (true)
-    {
-        vector<int> vizinho = vizinhanca(solucao, graph);
-        int custo_vizinho = *max_element(vizinho.begin(), vizinho.end());
-
-        if (custo_vizinho < melhor_custo)
-        {
-            melhor_solucao = vizinho;
-            melhor_custo = custo_vizinho;
-
-            if (!melhorMelhora)
-            {
-                break;
-            }
-        }
-        else if (!melhorMelhora)
-        {
-            break;
-        }
-    }
-
-    return melhor_solucao;
-}
-
 int main()
 {
+    auto inicio = high_resolution_clock::now();
+    cout << "Comecando" << endl;
+    cout << "Iniciando leitura do arquivo" << endl;
+
+    int total_graphs = 37;
+    total_graphs += DSJ_FILES.size();
+    total_graphs += REG_FILES.size();
+    total_graphs += LAT_FILES.size();
+    total_graphs += LEI_FILES.size();
+    total_graphs += SCH_FILES.size();
+    total_graphs += SGB_FILES.size();
+    total_graphs += MYC_FILES.size();
+    total_graphs += MIZ_FILES.size();
+    total_graphs += HOS_FILES.size();
+    total_graphs += CAR_FILES.size();
+    total_graphs += CUL_FILES.size();
+    total_graphs += R_FILES.size();
+
+    double porcentagem_each_graph = 100.0 / total_graphs;
+    double porcentagem_processamento = 0.0;
 
     ifstream file("grafo_aleatorio.txt");
     if (!file.is_open())
@@ -261,6 +214,8 @@ int main()
         return 1;
     }
 
+    cout << "Arquivo aberto" << endl;
+
     vector<DataGraph> graphsData;
 
     string line;
@@ -268,56 +223,85 @@ int main()
     Problem problem;
     int actual_graph = -1;
     Graph *graph;
-    // while (getline(file, line))
-    // {
-    //     stringstream linestream;
-    //     linestream << line;
-    //     char info[10];
-    //     linestream.getline(info, 4, ':');
-    //     if (!line.empty() && atoi(info) != actual_graph)
-    //     {
-    //         if (actual_graph != -1)
-    //         {
-    //             graph->generate_adj_matrix();
-    //             cout << "-- Grafo [" << actual_graph << "]com nVertices: " << graph->get_num_vertices();
-    //             HeuristicaConstrutivaResponse response = problem.heuristicaConstrutiva(*graph);
-    //             DataGraph dataGraph;
-    //             dataGraph.nameGraph = "Graph " + to_string(actual_graph);
-    //             dataGraph.data = response;
-    //             graphsData.push_back(dataGraph);
-    //             cout << " - Cores: " << response.num_cores_encontradas
-    //                  << " - Clique: " << response.size_clique
-    //                  << " - Delta: " << response.delta_clique
-    //                  << " - Arestas: " << response.num_arestas
-    //                  << " - DArestas: " << response.densidade_arestas << endl;
-    //         }
-    //         actual_graph++;
-    //         graph = new Graph();
-    //     }
+    while (getline(file, line))
+    {
+        // cout << "lendo linha" << actual_graph + 1 << endl;
+        stringstream linestream;
+        linestream << line;
+        char info[10];
+        linestream.getline(info, 4, ':');
+        if (!line.empty() && atoi(info) != actual_graph)
+        {
+            if (actual_graph != -1)
+            {
+                graph->generate_adj_matrix();
+                cout << "-- Grafo [" << actual_graph << "]com nVertices: " << graph->get_num_vertices() << endl;
+                HeuristicaConstrutivaResponse response = problem.heuristicaConstrutiva(*graph);
+                DataGraph dataGraph;
+                dataGraph.nameGraph = "Graph " + to_string(actual_graph);
+                dataGraph.data = response;
+                graphsData.push_back(dataGraph);
+                cout << " - Cores: " << response.num_cores_encontradas
+                     << " - Clique: " << response.size_clique
+                     << " - Delta: " << response.delta_clique
+                     << " - Arestas: " << response.num_arestas
+                     << " - DArestas: " << response.densidade_arestas << endl;
+                cout << " - Cores genético: " << response.num_cores_genetico << " - Conflitos genético: " << response.num_conflitos_genetico << endl;
+                porcentagem_processamento += porcentagem_each_graph;
+                cout << "Porcentagem de processamento: " << porcentagem_processamento << "%" << endl;
+            }
+            actual_graph++;
+            graph = new Graph();
+        }
 
-    //     graph->get_from_line(line);
-    // }
+        graph->get_from_line(line);
+    }
     file.close();
 
-    processaInstancia(DSJ_FILES, graphsData);
-    processaInstancia(REG_FILES, graphsData);
-    processaInstancia(LAT_FILES, graphsData);
-    processaInstancia(LEI_FILES, graphsData);
-    processaInstancia(SCH_FILES, graphsData);
-    processaInstancia(SGB_FILES, graphsData);
-    processaInstancia(MYC_FILES, graphsData);
-    processaInstancia(MIZ_FILES, graphsData);
-    processaInstancia(HOS_FILES, graphsData);
-    processaInstancia(CAR_FILES, graphsData);
-    processaInstancia(CUL_FILES, graphsData);
-    processaInstancia(R_FILES, graphsData);
+    processaInstancia(DSJ_FILES, graphsData, &porcentagem_processamento, porcentagem_each_graph);
+    processaInstancia(REG_FILES, graphsData, &porcentagem_processamento, porcentagem_each_graph);
+    processaInstancia(LAT_FILES, graphsData, &porcentagem_processamento, porcentagem_each_graph);
+    processaInstancia(LEI_FILES, graphsData, &porcentagem_processamento, porcentagem_each_graph);
+    processaInstancia(SCH_FILES, graphsData, &porcentagem_processamento, porcentagem_each_graph);
+    processaInstancia(SGB_FILES, graphsData, &porcentagem_processamento, porcentagem_each_graph);
+    processaInstancia(MYC_FILES, graphsData, &porcentagem_processamento, porcentagem_each_graph);
+    processaInstancia(MIZ_FILES, graphsData, &porcentagem_processamento, porcentagem_each_graph);
+    processaInstancia(HOS_FILES, graphsData, &porcentagem_processamento, porcentagem_each_graph);
+    processaInstancia(CAR_FILES, graphsData, &porcentagem_processamento, porcentagem_each_graph);
+    processaInstancia(CUL_FILES, graphsData, &porcentagem_processamento, porcentagem_each_graph);
+    processaInstancia(R_FILES, graphsData, &porcentagem_processamento, porcentagem_each_graph);
+    auto fim = high_resolution_clock::now();
 
+    // Calcula a duração
+    auto duracao = duration_cast<milliseconds>(fim - inicio);
+
+    cout << "Tempo de execução total: " << duracao.count() << " ms" << endl;
     fstream fileDataGraphs;
     fileDataGraphs.open("graphsData.csv", ios::out);
-    fileDataGraphs << "name_graph,num_vertices,num_arestas,clique_size,solution_colors,\n";
+    // fileDataGraphs << "name_graph,num_vertices,solution_colors,n_conflitos,n_cores_bl_pmtv,n_conflitos_bl_pmtv,n_cores_bl_mmtv,n_conflitos_bl_mmtv, n_cores_bl_pmcmf,n_conflitos_bl_pmcmf,n_cores_bl_mmcmf,n_conflitos_bl_mmcmf,n_cores_tabu_troca_vertice,n_conflitos_tabu_troca_vertice,n_cores_tabu_menor_frequencia,n_conflitos_tabu_menor_frequencia,\n";
+    fileDataGraphs << "name_graph,num_vertices,solution_colors,n_conflitos,n_cores_genetico,n_conflitos_genetico,\n";
     for (int i = 0; i < graphsData.size(); i++)
     {
-        fileDataGraphs << graphsData[i].nameGraph << "," << graphsData[i].data.num_vertices << "," << graphsData[i].data.num_arestas << "," << graphsData[i].data.size_clique << "," << graphsData[i].data.num_cores_encontradas << ",\n";
+        fileDataGraphs << graphsData[i].nameGraph                         // name_graph
+                       << "," << graphsData[i].data.num_vertices          // num_vertices
+                       << "," << graphsData[i].data.num_arestas           // num_arestas
+                       << "," << graphsData[i].data.num_cores_encontradas // solution_colors
+                       << "," << graphsData[i].data.num_conflitos         // n_conflitos
+                       //    << "," << graphsData[i].data.num_cores_busca_local_primeira_melhora_troca_vertice           // n_cores_bl_pmtv
+                       //    << "," << graphsData[i].data.num_conflitos_busca_local_primeira_melhora_troca_vertice       // n_conflitos_bl_pmtv
+                       //    << "," << graphsData[i].data.num_cores_busca_local_melhor_melhora_troca_vertice             // n_cores_bl_mmtv
+                       //    << "," << graphsData[i].data.num_conflitos_busca_local_melhor_melhora_troca_vertice         // n_conflitos_bl_mmtv
+                       //    << "," << graphsData[i].data.num_cores_busca_local_primeira_melhora_cor_menos_frequente     // n_cores_bl_pmcmf
+                       //    << "," << graphsData[i].data.num_conflitos_busca_local_primeira_melhora_cor_menos_frequente // n_conflitos_bl_pmcmf
+                       //    << "," << graphsData[i].data.num_cores_busca_local_melhor_melhora_cor_menos_frequente       // n_cores_bl_mmcmf
+                       //    << "," << graphsData[i].data.num_conflitos_busca_local_melhor_melhora_cor_menos_frequente   // n_conflitos_bl_mmcmf
+                       //    << "," << graphsData[i].data.num_cores_tabu_troca_vertice                                   // n_cores_tabu_troca_vertice
+                       //    << "," << graphsData[i].data.num_conflitos_tabu_troca_vertice                               // n_conflitos_tabu_troca_vertice
+                       //    << "," << graphsData[i].data.num_cores_tabu_menor_frequencia                                //  n_cores_tabu_menor_frequencia
+                       //    << "," << graphsData[i].data.num_conflitos_tabu_menor_frequencia                            // n_conflitos_tabu_menor_frequencia
+                       << "," << graphsData[i].data.num_cores_genetico     // n_cores_genetico
+                       << "," << graphsData[i].data.num_conflitos_genetico // n_conflitos_genetico
+                       << ",\n";
     }
     fileDataGraphs.close();
     return 0;
